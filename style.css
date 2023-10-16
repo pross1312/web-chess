@@ -27,6 +27,12 @@ html, body {
     max-height: 100%;
     cursor: pointer;
 }
+#chess-board .posible-move {
+    background-color: blue !important;
+}
+#chess-board .selected {
+    background-color: red !important;
+}
 #chess-board .black {
     background-color: #bcbcbf;
 }
