@@ -1,4 +1,3 @@
-let chess_board = null;
 const COLOR = {
     BLACK: 0,
     WHITE: 1,
@@ -12,6 +11,10 @@ const PIECE = {
     KING: 0b1100,
     NONE: 0,
 };
+
+let chess_board = null;  // Global board
+let current_turn = COLOR.BLACK; // Global turn
+
 function Cell(r, c) { return {row: r, col: c}; }
 function DragItem(x, y, item) {
     this.start = {x: x, y: y};
@@ -58,6 +61,8 @@ function get_rook_moves(color, cell) {
 }
 
 function get_pawn_moves(color, cell) {
+    let has_moved = chess_board.grid.children[cell.row*8 + cell.col].getElementsByTagName("img")[0].has_moved;
+    let has_not_moved = has_moved == false || has_moved == null;
     let forward = (color == COLOR.BLACK ? -1 : 1);
     let result = [];
     for (let i = -1; i <= 1; i++) {
@@ -65,6 +70,10 @@ function get_pawn_moves(color, cell) {
         if (check_piece == null) continue;
         if (i == 0) { if (check_piece == PIECE.NONE) result.push(Cell(cell.row + forward, cell.col)); }
         else if (get_color(check_piece) == (1-color)) result.push(Cell(cell.row + forward, cell.col + i));
+    }
+    if (has_not_moved) {
+        let check_piece = chess_board.get(cell.row + 2*forward, cell.col);
+        if (check_piece == PIECE.NONE) result.push(Cell(cell.row + 2*forward, cell.col))
     }
     return result;
 }
@@ -120,7 +129,6 @@ function MovingItem(item) {
     console.log(this.moves);
     this.item.classList.toggle("selected");
     for (let move of this.moves) {
-        console.log(move);
         chess_board.grid.children[move.row * 8 + move.col].classList.toggle("posible-move");
     }
     this.unmark = function() {
@@ -139,8 +147,11 @@ function MovingItem(item) {
     }
 }
 
+function change_turn() { current_turn = 1 - current_turn; }
+
 function move_item(from_item, to_item) {
     let from_img = from_item.getElementsByTagName("img")[0];
+    from_img.has_moved = true;
     from_item.removeChild(from_img);
     // reset img
     from_img.style.transform = "none";
@@ -150,6 +161,7 @@ function move_item(from_item, to_item) {
     from_item.piece = PIECE.NONE;
     to_item.innerHTML = "";
     to_item.appendChild(from_img);
+    change_turn();
 }
 
 function Board() {
@@ -189,17 +201,27 @@ function Board() {
                 }
             }
             square.onmousedown = function(e) { // trigger moving item and drag item, handle moving item click (move with click not drag)
+                let is_turn = get_color(this.piece) == current_turn;
+                console.log(is_turn);
                 if (moving_item != null) {
+                    // TODO: recheck, maybe some hideous bugs are hidden here
                     if (moving_item.can_move(Cell(this.row, this.col))) {
                         move_item(moving_item.item, this);
+                        moving_item.unmark();
+                        moving_item = null;
+                        return;
                     }
                     moving_item.unmark();
-                    if (moving_item.item != this) moving_item = null;
-                    else moving_item = new MovingItem(this);
+                    if (moving_item.item == this) moving_item = null;
+                    else {
+                        if (is_turn) moving_item = new MovingItem(this);
+                    }
                 } else if (this.piece != PIECE.NONE) {
-                    moving_item = new MovingItem(this);
+                    if (is_turn) moving_item = new MovingItem(this);
                 }
-                if (this.piece != PIECE.NONE) drag_item = new DragItem(e.clientX, e.clientY, this);
+                if (this.piece != PIECE.NONE && is_turn) {
+                    drag_item = new DragItem(e.clientX, e.clientY, this);
+                }
             }
             if ((r+c) % 2 == 0) square.classList.toggle("black");
             else square.classList.toggle("white");
@@ -226,7 +248,6 @@ function Board() {
         }
         return [piece, name + c.toLowerCase()];
     }
-    // let start_FEN = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R";
     let start_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
     this.display_FEN = function(fen) {
         let lines = fen.split("/");
