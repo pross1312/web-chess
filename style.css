@@ -37,7 +37,7 @@ html, body {
     background-color: blue !important;
 }
 #chess-board .selected {
-    background-color: red !important;
+    background-color: blue !important;
 }
 #chess-board .black {
     background-color: #bcbcbf;
@@ -45,7 +45,13 @@ html, body {
 #chess-board .white {
     background-color: #377c79;
 }
+#chess-board .in-check {
+    background-color: violet !important;
+}
 img {
     width: 100%;
     height: auto;
+}
+@media screen and (min-width: 640px) {
+    #turn-text { font-size: 1.25rem; }
 }

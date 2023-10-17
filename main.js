@@ -77,19 +77,33 @@ function Piece(type, r, c) {
         this.row = move.to.row;
         this.col = move.to.col;
         this.display.style.transform = "none";
-        move.from.removeChild(this.display);
         if (move.type == MOVE.CAPTURE || move.type == MOVE.ENPASSANT) {
-            move.target.square().innerHTML = "";
-            move.target = null;
+            Chess_board.remove(move.target);
         } else if (move.type == MOVE.CASTLE) {
             let rook_new_col = move.to.col == 6 ? 5 : 2;
             move.target.move(new Move(move.target, Chess_board.get_square(move.to.row, rook_new_col), MOVE.NORMAL));
         }
         this.has_moved = true;
+        move.from.removeChild(this.display);
         move.to.appendChild(this.display);
         this.moves.push(move);
+
+        // check for checking
+        let oppose_king = Chess_board.find(oppose_color(this.color()) | PIECE_TYPE.KING);
+        if (is_king_in_check(oppose_king)) oppose_king.square().classList.add("in-check");
+        else oppose_king.square().classList.remove("in-check");
+        if (this.piece_type() == PIECE_TYPE.KING) {
+            move.from.classList.remove("in-check");
+        } else {
+            let my_king = Chess_board.find(this.color() | PIECE_TYPE.KING);
+            if (is_king_in_check(my_king)) my_king.square().classList.add("in-check");
+            else my_king.square().classList.remove("in-check");
+        }
     }
     this.last_move = function() { return this.moves[this.moves.length-1]; }
+    this.undo_last_move = function() {
+        let last_move = this.last_move();
+    }
 }
 function Move(piece, to_square, type) {
     this.turn_count = Current_turn.count;
@@ -113,7 +127,7 @@ function Move(piece, to_square, type) {
 
 
 function Board() {
-    this.cell_size = 80;
+    this.cell_size = 38;
     this.grid = document.getElementById("chess-board");
     this.grid.style.width = 8 * this.cell_size;
     this.grid.style.height = 8 * this.cell_size;
@@ -130,7 +144,16 @@ function Board() {
         let c = parseInt(dx/this.cell_size);
         return this.get_square(r, c);
     }
+    this.pieces = {};
+    this.find = function(type) {
+        return this.pieces[type.toString()];
+    }
     this.get = function(r, c) { return this.get_square(r, c).piece(); }
+    this.removed_pieces = [];
+    this.remove = function(piece) {
+        this.removed_pieces.push(piece);
+        piece.square().removeChild(piece.display);
+    }
     for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
             let square = document.createElement("div");
@@ -175,6 +198,7 @@ function Board() {
                 }
                 let piece_type = parse_char(p);
                 let piece = new Piece(piece_type, parseInt(count/8), count%8);
+                this.pieces[piece.type.toString()] = piece;
                 this.grid.children[count].appendChild(piece.display);
                 count += 1;
             }
@@ -267,6 +291,7 @@ function get_king_moves(piece) {
         if (cur_square.has_piece() && move_type != MOVE.CAPTURE) continue;
         moves.push(new Move(piece, cur_square, move_type));
     }
+    // check for castle
     if (!piece.has_moved) {
         function check_block(row, start_col, end_col) {
             for (let i = start_col; i <= end_col; i++) if (Chess_board.get(row, i) != null) return true;
@@ -294,6 +319,7 @@ function get_pawn_moves(piece) {
     let sub_diag = Chess_board.get_square(piece.row + forward, piece.col+1);
     if (forward_square && !forward_square.has_piece()) {
         moves.push(new Move(piece, forward_square, MOVE.NORMAL));
+        // check for double forward
         let forward_2_square = Chess_board.get_square(piece.row + 2*forward, piece.col);
         if (!piece.has_moved && forward_2_square && !forward_2_square.has_piece()) {
             moves.push(new Move(piece, forward_2_square, MOVE.PAWN_DOUBLE_ADVANCE));
@@ -303,6 +329,7 @@ function get_pawn_moves(piece) {
         if (main_diag.has_piece() && main_diag.piece().color() == oppose_color(piece.color())) {
             moves.push(new Move(piece, main_diag, MOVE.CAPTURE));
         }
+        // check for enpassant
         let left_piece = Chess_board.get(piece.row, piece.col-1);
         if (left_piece && left_piece.has_moved && left_piece.color() == oppose_color(piece.color()) &&
             left_piece.last_move().type == MOVE.PAWN_DOUBLE_ADVANCE && left_piece.last_move().turn_count == Current_turn.count-1) {
@@ -313,6 +340,7 @@ function get_pawn_moves(piece) {
         if (sub_diag.has_piece() && sub_diag.piece().color() == oppose_color(piece.color())) {
             moves.push(new Move(piece, sub_diag, MOVE.CAPTURE));
         }
+        // check for enpassant
         let right_piece = Chess_board.get(piece.row, piece.col+1);
         if (right_piece && right_piece.has_moved && right_piece.color() == oppose_color(piece.color()) &&
             right_piece.last_move().type == MOVE.PAWN_DOUBLE_ADVANCE && right_piece.last_move().turn_count == Current_turn.count-1) {
@@ -323,16 +351,44 @@ function get_pawn_moves(piece) {
 }
 
 function get_possible_moves(piece) {
+    let result = [];
     switch (piece.piece_type()) {
-    case PIECE_TYPE.ROOK  : return get_rook_moves(piece);
-    case PIECE_TYPE.PAWN  : return get_pawn_moves(piece);
-    case PIECE_TYPE.BISHOP: return get_bishop_moves(piece);
-    case PIECE_TYPE.QUEEN : return get_bishop_moves(piece).concat(get_rook_moves(piece));
-    case PIECE_TYPE.KNIGHT: return get_knight_moves(piece);
-    case PIECE_TYPE.KING  : return get_king_moves(piece);
+    case PIECE_TYPE.ROOK  : result = get_rook_moves(piece); break;
+    case PIECE_TYPE.PAWN  : result = get_pawn_moves(piece); break;
+    case PIECE_TYPE.BISHOP: result = get_bishop_moves(piece); break;
+    case PIECE_TYPE.QUEEN : result = get_bishop_moves(piece).concat(get_rook_moves(piece)); break;
+    case PIECE_TYPE.KNIGHT: result = get_knight_moves(piece); break;
+    case PIECE_TYPE.KING  : result = get_king_moves(piece); break;
     default:
     }
-    return [];
+    return result;
+}
+
+function is_king_in_check(king) {
+    let pseudo_piece = king;
+    let straight_moves = get_rook_moves(pseudo_piece);
+    let diag_moves = get_bishop_moves(pseudo_piece);
+    let knight_moves = get_knight_moves(pseudo_piece);
+    for (let move of straight_moves) {
+        if (move.type != MOVE.CAPTURE) continue;
+        let attacker = move.target.piece_type();
+        if (attacker == PIECE_TYPE.ROOK || attacker == PIECE_TYPE.QUEEN) return true;
+    }
+    for (let move of diag_moves) {
+        if (move.type != MOVE.CAPTURE) continue;
+        let attacker = move.target.piece_type();
+        if (attacker == PIECE_TYPE.BISHOP || attacker == PIECE_TYPE.QUEEN) return true;
+        else if (attacker == PIECE_TYPE.PAWN && Math.abs(move.target.row - king.row) == 1) return true;
+    }
+    for (let move of knight_moves) {
+        if (move.type != MOVE.CAPTURE) continue;
+        if (move.target.piece_type() == PIECE_TYPE.KNIGHT) return true;
+    }
+    return false;
+}
+
+function is_legal_move(move) {
+    let piece = move.mover;
 }
 
 function MovingPiece(piece) {
