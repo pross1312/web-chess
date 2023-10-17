@@ -12,7 +12,13 @@ html, body {
     -moz-user-select: none;
     -webkit-user-select: none;
 }
-
+#turn-text {
+    box-sizing: border-box;
+    padding-top: 10px;
+    color: white;
+    text-align: center;
+    font-size: 2rem;
+}
 
 #chess-board {
     background-color: #444;
@@ -42,5 +48,4 @@ html, body {
 img {
     width: 100%;
     height: auto;
-    pointer-events: none;
 }

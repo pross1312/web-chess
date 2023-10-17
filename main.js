@@ -2,7 +2,7 @@ const COLOR = {
     BLACK: 0,
     WHITE: 1,
 };
-const PIECE = {
+const PIECE_TYPE = {
     PAWN: 0b10,
     BISHOP: 0b100,
     KNIGHT: 0b110,
@@ -11,242 +11,156 @@ const PIECE = {
     KING: 0b1100,
     NONE: 0,
 };
-
-let chess_board = null;  // Global board
-let current_turn = COLOR.BLACK; // Global turn
-
-function Cell(r, c) { return {row: r, col: c}; }
-function DragItem(x, y, item) {
-    this.start = {x: x, y: y};
-    this.item = item;
-    this.snap_trigger = false;
-    this.snap_back = function() {
-        this.item.getElementsByTagName("img")[0].style.transform = "none";
-    }
-    this.get_snap_to_center_vec = function(img, pos) {
-        this.snap_vec = {x: pos.x - img.offsetLeft - img.width/2, y: pos.y - img.offsetTop - img.height/2};
-        this.snap_trigger = true;
-    }
-    this.drag = function(mouse_pos) {
-        let item_img = this.item.getElementsByTagName("img")[0];
-        if (!this.snap_trigger) this.get_snap_to_center_vec(item_img, mouse_pos);
-        let vec = {
-            x:  this.snap_vec.x + mouse_pos.x - this.start.x,
-            y:  this.snap_vec.y + mouse_pos.y - this.start.y
-        };
-        item_img.style.transform = `translate(${vec.x}px, ${vec.y}px)`
+const MOVE = {
+    NORMAL: 0,
+    CAPTURE: 1,
+    ENPASSANT: 2,
+    CASTLE: 3,
+    PAWN_DOUBLE_ADVANCE: 4,
+};
+// ----------------------------------------------
+// GLOBAL variable
+let Chess_board      = new Board();
+let Current_turn     = {count: 0, color: COLOR.BLACK};
+let Dragging_piece   = null;
+let Moving_piece     = null;
+// ----------------------------------------------
+// support utils
+function change_turn()       {
+    Current_turn = {
+        count: Current_turn.count + 1,
+        color: 1 - Current_turn.color,
+    };
+    if (Current_turn.color == COLOR.BLACK) {
+        document.getElementById("turn-text").innerText = "Black to move"
+    } else {
+        document.getElementById("turn-text").innerText = "White to move"
     }
 }
-let drag_item = null;
-
-function get_color(piece) { if (piece == null || piece == PIECE.NONE) return null; return piece & 1; }
-function get_type(piece) { return piece & (~1); }
-
-function get_rook_moves(color, cell) {
-    let opponent_color = 1 - color;
-    let moves = [];
-    let directions = [Cell(1, 0), Cell(-1, 0), Cell(0, 1), Cell(0, -1)];
-    for (let direction of directions) {
-        let cur_cell = Cell(direction.row + cell.row, direction.col + cell.col);
-        let cur_piece = chess_board.get(cur_cell.row, cur_cell.col);
-        while (cur_piece != null) {
-            if (get_color(cur_piece) == color) break;
-            moves.push(cur_cell);
-            if (get_color(cur_piece) == opponent_color) break;
-            cur_cell = Cell(direction.row + cur_cell.row, direction.col + cur_cell.col);
-            cur_piece = chess_board.get(cur_cell.row, cur_cell.col);
-        }
-    }
-    return moves;
+function oppose_color(color) { return 1 - color; }
+function Vec(x, y) {
+    this.x = x;
+    this.y = y;
+    this.add = (v) => Vec(this.x + v.x, this.y + v.y);
 }
-
-function get_pawn_moves(color, cell) {
-    let has_moved = chess_board.grid.children[cell.row*8 + cell.col].getElementsByTagName("img")[0].has_moved;
-    let has_not_moved = has_moved == false || has_moved == null;
-    let forward = (color == COLOR.BLACK ? -1 : 1);
-    let result = [];
-    for (let i = -1; i <= 1; i++) {
-        let check_piece = chess_board.get(cell.row + forward, cell.col + i);
-        if (check_piece == null) continue;
-        if (i == 0) { if (check_piece == PIECE.NONE) result.push(Cell(cell.row + forward, cell.col)); }
-        else if (get_color(check_piece) == (1-color)) result.push(Cell(cell.row + forward, cell.col + i));
-    }
-    if (has_not_moved) {
-        let check_piece = chess_board.get(cell.row + 2*forward, cell.col);
-        if (check_piece == PIECE.NONE) result.push(Cell(cell.row + 2*forward, cell.col))
-    }
-    return result;
-}
-
-function get_bishop_moves(color, cell) {
-    let opponent_color = 1 - color;
-    let moves = [];
-    let directions = [Cell(1, 1), Cell(-1, -1), Cell(1, -1), Cell(-1, 1)];
-    for (let direction of directions) {
-        let cur_cell = Cell(direction.row + cell.row, direction.col + cell.col);
-        let cur_piece = chess_board.get(cur_cell.row, cur_cell.col);
-        while (cur_piece != null) {
-            if (get_color(cur_piece) == color) break;
-            moves.push(cur_cell);
-            if (get_color(cur_piece) == opponent_color) break;
-            cur_cell = Cell(direction.row + cur_cell.row, direction.col + cur_cell.col);
-            cur_piece = chess_board.get(cur_cell.row, cur_cell.col);
-        }
-    }
-    return moves;
-}
-
-function get_knight_moves(color, cell) {
-    let moves = [];
-    let directions = [Cell(2, 1), Cell(2, -1), Cell(1, 2), Cell(-1, 2),
-                      Cell(-2, 1), Cell(-2, -1), Cell(1, -2), Cell(-1, -2)];
-    for (let direction of directions) {
-        let cur_cell = Cell(direction.row + cell.row, direction.col + cell.col);
-        let cur_piece = chess_board.get(cur_cell.row, cur_cell.col);
-        if (cur_piece == null || get_color(cur_piece) == color) continue;
-        moves.push(cur_cell);
-    }
-    return moves;
-
-}
-
-function get_possible_moves(piece, cell) {
-    switch (get_type(piece)) {
-    case PIECE.ROOK: return get_rook_moves(get_color(piece), cell); break;
-    case PIECE.PAWN: return get_pawn_moves(get_color(piece), cell); break;
-    case PIECE.BISHOP: return get_bishop_moves(get_color(piece), cell); break;
-    case PIECE.QUEEN: return get_bishop_moves(get_color(piece), cell).concat(get_rook_moves(get_color(piece), cell)); break;
-    case PIECE.KNIGHT: return get_knight_moves(get_color(piece), cell)
+function Cell(r, c) { this.row = r; this.col = c; }
+function Piece(type, r, c) {
+    function get_color(piece)    { if (piece == null || piece == PIECE_TYPE.NONE) return null; return piece & 1; }
+    function get_type(piece)     { return piece & (~1); }
+    this.has_moved = false;
+    this.row = r;
+    this.col = c;
+    this.type = type;
+    this.color = function() { return get_color(this.type); }
+    this.piece_type = function() { return get_type(this.type); }
+    this.name = "";
+    this.moves = [];
+    if (this.color() == COLOR.BLACK) this.name += "b";
+    else this.name += "w";
+    switch (get_type(type)) {
+    case PIECE_TYPE.PAWN  : this.name += "p"; break;
+    case PIECE_TYPE.BISHOP: this.name += "b"; break;
+    case PIECE_TYPE.KNIGHT: this.name += "n"; break;
+    case PIECE_TYPE.ROOK  : this.name += "r"; break;
+    case PIECE_TYPE.QUEEN : this.name += "q"; break;
+    case PIECE_TYPE.KING  : this.name += "k"; break;
     default:
     }
-    return [];
-}
-
-let moving_item = null;
-function MovingItem(item) {
-    this.item = item;
-    this.moves = get_possible_moves(item.piece, Cell(item.row, item.col));
-    console.log(this.moves);
-    this.item.classList.toggle("selected");
-    for (let move of this.moves) {
-        chess_board.grid.children[move.row * 8 + move.col].classList.toggle("posible-move");
-    }
-    this.unmark = function() {
-        this.item.classList.toggle("selected");
-        for (let move of this.moves) {
-            // let child = chess_board.grid.children[move.row * 8 + move.col];
-            // child.style.backgroundColor = child.original_backround;
-            chess_board.grid.children[move.row * 8 + move.col].classList.toggle("posible-move");
+    this.display = document.createElement("img");
+    this.display.src = "./images/" + this.name + ".png";
+    this.display.draggable = false;
+    this.square = function() { return this.display.parentNode; }
+    this.display.piece = this;
+    this.display.onmousedown = function(e){ piece_mouse_down(e, this.piece); };
+    this.display.onmouseup = function(e){ piece_mouse_up(e, this.piece); };
+    this.move = function(move) {
+        this.row = move.to.row;
+        this.col = move.to.col;
+        this.display.style.transform = "none";
+        move.from.removeChild(this.display);
+        if (move.type == MOVE.CAPTURE || move.type == MOVE.ENPASSANT) {
+            move.target.square().innerHTML = "";
+            move.target = null;
+        } else if (move.type == MOVE.CASTLE) {
+            let rook_new_col = move.to.col == 6 ? 5 : 2;
+            move.target.move(new Move(move.target, Chess_board.get_square(move.to.row, rook_new_col), MOVE.NORMAL));
         }
+        this.has_moved = true;
+        move.to.appendChild(this.display);
+        this.moves.push(move);
     }
-    this.can_move= function(cell) {
-        for (let move of this.moves) {
-            if (cell.row == move.row && cell.col == move.col) return true;
-        }
-        return false;
+    this.last_move = function() { return this.moves[this.moves.length-1]; }
+}
+function Move(piece, to_square, type) {
+    this.turn_count = Current_turn.count;
+    this.mover = piece;
+    this.from = piece.square();
+    this.to = to_square;
+    this.type = type;
+    this.target = null;
+    if (type == MOVE.CAPTURE) {
+        this.target = this.to.piece();
+    } else if (type == MOVE.ENPASSANT) {
+        let forward = piece.color() == COLOR.BLACK ? -1 : 1;
+        this.target = Chess_board.get(this.to.row - forward, this.to.col);
+        console.assert(this.target != null && this.target.color() == oppose_color(this.mover.color()));
+    } else if (type == MOVE.CASTLE) {
+        if (this.to.col == 1) this.target = Chess_board.get(piece.row, 0);
+        else if (this.to.col == 6) this.target = Chess_board.get(piece.row, 7);
+        else alert("Unknown castle pos", this.to.col);
     }
 }
 
-function change_turn() { current_turn = 1 - current_turn; }
-
-function move_item(from_item, to_item) {
-    let from_img = from_item.getElementsByTagName("img")[0];
-    from_img.has_moved = true;
-    from_item.removeChild(from_img);
-    // reset img
-    from_img.style.transform = "none";
-    from_img.snap_vec = null;
-    from_img.snap_trigger = false;
-    to_item.piece = from_item.piece;
-    from_item.piece = PIECE.NONE;
-    to_item.innerHTML = "";
-    to_item.appendChild(from_img);
-    change_turn();
-}
 
 function Board() {
-    this.cell_size = 70;
+    this.cell_size = 80;
     this.grid = document.getElementById("chess-board");
     this.grid.style.width = 8 * this.cell_size;
     this.grid.style.height = 8 * this.cell_size;
     this.grid.style.gridTemplateColumns = `repeat(8, ${this.cell_size}px)`;
     this.grid.style.gridTemplateRows = `repeat(8, ${this.cell_size}px)`;
-    this.get = function(r, c) {
+    this.get_square = function(r, c) {
         if (r >= 8 || r < 0 || c >= 8 || c < 0) return null;
-        return this.grid.children[r * 8 + c].piece;
+        return this.grid.children[r * 8 + c];
     };
+    this.square_at_coord = function(x, y) {
+        let dx = x - this.grid.offsetLeft;
+        let dy = y - this.grid.offsetTop;
+        let r = parseInt(dy/this.cell_size);
+        let c = parseInt(dx/this.cell_size);
+        return this.get_square(r, c);
+    }
+    this.get = function(r, c) { return this.get_square(r, c).piece(); }
     for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
             let square = document.createElement("div");
             square.classList.toggle("square");
             this.grid.appendChild(square);
-            square.original_backround = square.style.backgroundColor;
+            square.img = function() { return this.getElementsByTagName("img")[0] }
+            square.has_piece = function() { return this.img() != null }
+            square.piece = function() { return square.img() == null ? null : square.img().piece }
             square.row = r;
             square.col = c;
-            square.board = this;
-            square.pos = {x: c*this.cell_size, y: r*this.cell_size};
-            square.piece = PIECE.NONE;
-            square.onmouseup = function (e) { // only if there is a drag item
-                if (drag_item != null) {
-                    if (moving_item != null) {
-                        if (moving_item.can_move(Cell(this.row, this.col))) {
-                            move_item(moving_item.item, this);
-                            moving_item.unmark();
-                            moving_item = null;
-                        } else {
-                            drag_item.snap_back();
-                        }
-                        drag_item = null;
-                    }
-                }
-            }
-            square.onmousedown = function(e) { // trigger moving item and drag item, handle moving item click (move with click not drag)
-                let is_turn = get_color(this.piece) == current_turn;
-                console.log(is_turn);
-                if (moving_item != null) {
-                    // TODO: recheck, maybe some hideous bugs are hidden here
-                    if (moving_item.can_move(Cell(this.row, this.col))) {
-                        move_item(moving_item.item, this);
-                        moving_item.unmark();
-                        moving_item = null;
-                        return;
-                    }
-                    moving_item.unmark();
-                    if (moving_item.item == this) moving_item = null;
-                    else {
-                        if (is_turn) moving_item = new MovingItem(this);
-                    }
-                } else if (this.piece != PIECE.NONE) {
-                    if (is_turn) moving_item = new MovingItem(this);
-                }
-                if (this.piece != PIECE.NONE && is_turn) {
-                    drag_item = new DragItem(e.clientX, e.clientY, this);
-                }
-            }
+            square.coord = Vec(c*this.cell_size, r*this.cell_size);
+            square.onmousedown = square_mouse_down;
             if ((r+c) % 2 == 0) square.classList.toggle("black");
             else square.classList.toggle("white");
         }
     }
     function parse_char(c) {
-        let piece = PIECE.NONE;
-        let name = "";
-        if (c.toUpperCase() == c) {
-            piece |= COLOR.BLACK;
-            name = "b";
-        } else {
-            piece |= COLOR.WHITE;
-            name = "w";
-        }
+        let piece = PIECE_TYPE.NONE;
+        if (c.toUpperCase() == c) piece |= COLOR.BLACK;
+        else piece |= COLOR.WHITE;
         switch (c.toLowerCase()) {
-            case 'n': piece |= PIECE.KNIGHT; break;
-            case 'k': piece |= PIECE.KING; break;
-            case 'r': piece |= PIECE.ROOK; break;
-            case 'q': piece |= PIECE.QUEEN; break;
-            case 'b': piece |= PIECE.BISHOP; break;
-            case 'p': piece |= PIECE.PAWN; break;
-            default: alert("INVALID PIECE", c);
+            case 'n': piece |= PIECE_TYPE.KNIGHT; break;
+            case 'k': piece |= PIECE_TYPE.KING; break;
+            case 'r': piece |= PIECE_TYPE.ROOK; break;
+            case 'q': piece |= PIECE_TYPE.QUEEN; break;
+            case 'b': piece |= PIECE_TYPE.BISHOP; break;
+            case 'p': piece |= PIECE_TYPE.PAWN; break;
+            default: alert("INVALID PIECE_TYPE", c);
         }
-        return [piece, name + c.toLowerCase()];
+        return piece;
     }
     let start_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
     this.display_FEN = function(fen) {
@@ -259,31 +173,248 @@ function Board() {
                     count += Number(p);
                     continue;
                 }
-                let [piece, name] = parse_char(p);
-                let img = document.createElement("img");
-                img.src = "./images/" + name + ".png";
-                img.draggable = false;
-                img.onmousemove = null;
-                this.grid.children[count].piece = piece;
-                this.grid.children[count].appendChild(img);
-                this.grid.children[count].name = name;
+                let piece_type = parse_char(p);
+                let piece = new Piece(piece_type, parseInt(count/8), count%8);
+                this.grid.children[count].appendChild(piece.display);
                 count += 1;
             }
         }
     }
     this.display_FEN(start_FEN);
 }
-chess_board = new Board();
 
-window.onmousemove = function(e) {
-    if (drag_item != null) {
-        if (moving_item == null) moving_item = new MovingItem(drag_item.item); // for some case like when we first click to select then later drag it 
-        drag_item.drag({x: e.clientX, y: e.clientY});
+function DraggingPiece(x, y, piece) {
+    this.start = new Vec(x, y);
+    this.piece = piece;
+    this.snap_triggered = false;
+    this.snap_vec = new Vec(0, 0);
+    this.snap_back = function() {
+        this.piece.display.style.transform = "none";
+    }
+    this.drag = function(mouse_x, mouse_y) {
+        let piece_img = this.piece.display;
+        if (!this.snap_triggered) {
+            this.snap_vec = new Vec(mouse_x - piece_img.offsetLeft - piece_img.width/2,
+                                    mouse_y - piece_img.offsetTop - piece_img.height/2);
+            this.snap_triggered = true;
+        }
+        let vec = new Vec(this.snap_vec.x + mouse_x - this.start.x,
+                          this.snap_vec.y + mouse_y - this.start.y);
+        piece_img.style.transform = `translate(${vec.x}px, ${vec.y}px)`
     }
 }
-window.onmouseup = function(e) { // for cases like when mouse up outside of board
-    if (drag_item) {
-        drag_item.snap_back();
-        drag_item = null;
+
+function get_slide_moves(directions, piece) {
+    let opponent_color = oppose_color(piece.color());
+    let moves = []
+    for (let direction of directions) {
+        let cur_cell = new Cell(direction.row + piece.row, direction.col + piece.col);
+        let cur_square = Chess_board.get_square(cur_cell.row, cur_cell.col);
+        while (cur_square != null) {
+            if (cur_square.has_piece() && cur_square.piece().color() == piece.color()) break;
+            let move_type = (cur_square.has_piece() && cur_square.piece().color() == opponent_color) ? MOVE.CAPTURE : MOVE.NORMAL;
+            moves.push(new Move(piece, cur_square, move_type));
+            if (move_type == MOVE.CAPTURE) break;
+            cur_cell = new Cell(direction.row + cur_cell.row, direction.col + cur_cell.col);
+            cur_square = Chess_board.get_square(cur_cell.row, cur_cell.col);
+        }
+    }
+    return moves;
+}
+
+function get_rook_moves(piece) {
+    let moves = [];
+    let directions = [new Cell(1, 0), new Cell(-1, 0), new Cell(0, 1), new Cell(0, -1)];
+    return get_slide_moves(directions, piece);
+}
+
+function get_bishop_moves(piece) {
+    let moves = [];
+    let directions = [new Cell(1, 1), new Cell(-1, -1), new Cell(1, -1), new Cell(-1, 1)];
+    return get_slide_moves(directions, piece);
+}
+
+function get_knight_moves(piece) {
+    let moves = [];
+    let opponent_color = oppose_color(piece.color());
+    let directions = [
+        new Cell(-1, 2), new Cell(1, 2), new Cell(-1, -2), new Cell(1, -2),
+        new Cell(2, -1), new Cell(2, 1), new Cell(-2, -1), new Cell(-2, 1),
+    ]
+    for (let direction of directions) {
+        let cur_cell = new Cell(direction.row + piece.row, direction.col + piece.col);
+        let cur_square = Chess_board.get_square(cur_cell.row, cur_cell.col);
+        if (cur_square == null) continue;
+        let move_type = (cur_square.has_piece() && cur_square.piece().color() == opponent_color) ? MOVE.CAPTURE : MOVE.NORMAL;
+        if (cur_square.has_piece() && move_type != MOVE.CAPTURE) continue;
+        moves.push(new Move(piece, cur_square, move_type));
+    }
+    return moves;
+}
+
+function get_king_moves(piece) {
+    let moves = [];
+    let opponent_color = oppose_color(piece.color());
+    let directions = [
+        new Cell(1, 0), new Cell(-1, 0), new Cell(0, 1), new Cell(0, -1),
+        new Cell(1, 1), new Cell(-1, -1), new Cell(1, -1), new Cell(-1, 1),
+    ]
+    for (let direction of directions) {
+        let cur_cell = new Cell(direction.row + piece.row, direction.col + piece.col);
+        let cur_square = Chess_board.get_square(cur_cell.row, cur_cell.col);
+        if (cur_square == null) continue;
+        let move_type = (cur_square.has_piece() && cur_square.piece().color() == opponent_color) ? MOVE.CAPTURE : MOVE.NORMAL;
+        if (cur_square.has_piece() && move_type != MOVE.CAPTURE) continue;
+        moves.push(new Move(piece, cur_square, move_type));
+    }
+    if (!piece.has_moved) {
+        function check_block(row, start_col, end_col) {
+            for (let i = start_col; i <= end_col; i++) if (Chess_board.get(row, i) != null) return true;
+            return false;
+        }
+        let left_rook = Chess_board.get(piece.row, 0);
+        let right_rook = Chess_board.get(piece.row, 7);
+        if (!check_block(piece.row, 1, piece.col-1) && left_rook &&
+            left_rook.piece_type() == PIECE_TYPE.ROOK && !left_rook.has_moved) {
+            moves.push(new Move(piece, Chess_board.get_square(piece.row, 1), move.castle));
+        }
+        if (!check_block(piece.row, piece.col+1, 6) && right_rook &&
+            right_rook.piece_type() == PIECE_TYPE.ROOK && !right_rook.has_moved) {
+            moves.push(new Move(piece, Chess_board.get_square(piece.row, 6), MOVE.CASTLE));
+        }
+    }
+    return moves;
+}
+
+function get_pawn_moves(piece) {
+    let moves = [];
+    let forward = piece.color() == COLOR.BLACK ? -1 : 1;
+    let forward_square = Chess_board.get_square(piece.row + forward, piece.col);
+    let main_diag = Chess_board.get_square(piece.row + forward, piece.col-1);
+    let sub_diag = Chess_board.get_square(piece.row + forward, piece.col+1);
+    if (forward_square && !forward_square.has_piece()) {
+        moves.push(new Move(piece, forward_square, MOVE.NORMAL));
+        let forward_2_square = Chess_board.get_square(piece.row + 2*forward, piece.col);
+        if (!piece.has_moved && forward_2_square && !forward_2_square.has_piece()) {
+            moves.push(new Move(piece, forward_2_square, MOVE.PAWN_DOUBLE_ADVANCE));
+        }
+    }
+    if (main_diag) {
+        if (main_diag.has_piece() && main_diag.piece().color() == oppose_color(piece.color())) {
+            moves.push(new Move(piece, main_diag, MOVE.CAPTURE));
+        }
+        let left_piece = Chess_board.get(piece.row, piece.col-1);
+        if (left_piece && left_piece.has_moved && left_piece.color() == oppose_color(piece.color()) &&
+            left_piece.last_move().type == MOVE.PAWN_DOUBLE_ADVANCE && left_piece.last_move().turn_count == Current_turn.count-1) {
+            moves.push(new Move(piece, main_diag, MOVE.ENPASSANT));
+        }
+    }
+    if (sub_diag) {
+        if (sub_diag.has_piece() && sub_diag.piece().color() == oppose_color(piece.color())) {
+            moves.push(new Move(piece, sub_diag, MOVE.CAPTURE));
+        }
+        let right_piece = Chess_board.get(piece.row, piece.col+1);
+        if (right_piece && right_piece.has_moved && right_piece.color() == oppose_color(piece.color()) &&
+            right_piece.last_move().type == MOVE.PAWN_DOUBLE_ADVANCE && right_piece.last_move().turn_count == Current_turn.count-1) {
+            moves.push(new Move(piece, sub_diag, MOVE.ENPASSANT));
+        }
+    }
+    return moves;
+}
+
+function get_possible_moves(piece) {
+    switch (piece.piece_type()) {
+    case PIECE_TYPE.ROOK  : return get_rook_moves(piece);
+    case PIECE_TYPE.PAWN  : return get_pawn_moves(piece);
+    case PIECE_TYPE.BISHOP: return get_bishop_moves(piece);
+    case PIECE_TYPE.QUEEN : return get_bishop_moves(piece).concat(get_rook_moves(piece));
+    case PIECE_TYPE.KNIGHT: return get_knight_moves(piece);
+    case PIECE_TYPE.KING  : return get_king_moves(piece);
+    default:
+    }
+    return [];
+}
+
+function MovingPiece(piece) {
+    this.piece = piece;
+    this.moves = get_possible_moves(piece);
+    this.piece.square().classList.toggle("selected");
+    for (let move of this.moves) {
+        Chess_board.get_square(move.to.row, move.to.col).classList.toggle("posible-move");
+    }
+    this.unmark = function() {
+        this.piece.square().classList.toggle("selected");
+        for (let move of this.moves) {
+            Chess_board.get_square(move.to.row, move.to.col).classList.toggle("posible-move");
+        }
+    }
+    this.can_move= function(square) {
+        for (let move of this.moves) {
+            if (square.row == move.to.row && square.col == move.to.col) return move;
+        }
+        return null;
+    }
+    this.make_move = function(move) {
+        this.piece.move(move);
+        change_turn();
+    }
+}
+
+function piece_mouse_up(e) {
+    e.stopPropagation();
+    if (Dragging_piece != null) {
+        if (Moving_piece != null) {
+            let square = Chess_board.square_at_coord(e.clientX, e.clientY);
+            if (square != null) {
+                let possible_move = Moving_piece.can_move(square);
+                if (possible_move != null) {
+                    Moving_piece.unmark();
+                    Moving_piece.make_move(possible_move);
+                    Moving_piece = null;
+                } else Dragging_piece.snap_back();
+            } else Dragging_piece.snap_back();
+        }
+        Dragging_piece = null;
+    }
+}
+function square_mouse_down(e) {
+    if (Moving_piece != null && Moving_piece.piece.square() != this) {
+        Moving_piece.unmark();
+        let possible_move = Moving_piece.can_move(this);
+        if (possible_move != null) {
+            Moving_piece.make_move(possible_move);
+        }
+        Moving_piece = null;
+    }
+}
+function piece_mouse_down(e, piece) {
+    e.stopPropagation();
+    if (Moving_piece != null) {
+        if (Moving_piece.piece != piece) {
+            let possible_move = Moving_piece.can_move(piece.square());
+            if (possible_move != null) {
+                Moving_piece.unmark();
+                Moving_piece.make_move(possible_move);
+                Moving_piece = null;
+                return;
+            }
+        }
+        Moving_piece.unmark();
+        Moving_piece = null;
+    }
+    if (Current_turn.color == piece.color()) Moving_piece = new MovingPiece(piece);
+    if (Dragging_piece == null && Current_turn.color == piece.color()) {
+        Dragging_piece = new DraggingPiece(e.clientX, e.clientY, piece);
+    }
+}
+window.onmousemove = function(e) {
+    if (Dragging_piece != null) {
+        if (Moving_piece == null) Moving_piece = new MovingPiece(Dragging_piece.piece);
+        Dragging_piece.drag(e.clientX, e.clientY);
+    }
+}
+window.onmouseup = function(e) {
+    if (Dragging_piece != null) {
+        Dragging_piece = null;
     }
 }
