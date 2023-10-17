@@ -125,7 +125,7 @@ function Move(piece, to_square, type) {
 
 
 function Board() {
-    this.cell_size = 80;
+    this.cell_size = 90;
     this.grid = document.getElementById("chess-board");
     this.grid.style.width = 8 * this.cell_size;
     this.grid.style.height = 8 * this.cell_size;
@@ -299,7 +299,7 @@ function get_king_moves(piece) {
         let right_rook = Chess_board.get(piece.row, 7);
         if (!check_block(piece.row, 1, piece.col-1) && left_rook &&
             left_rook.piece_type() == PIECE_TYPE.ROOK && !left_rook.has_moved) {
-            moves.push(new Move(piece, Chess_board.get_square(piece.row, 1), move.castle));
+            moves.push(new Move(piece, Chess_board.get_square(piece.row, 1), MOVE.CASTLE));
         }
         if (!check_block(piece.row, piece.col+1, 6) && right_rook &&
             right_rook.piece_type() == PIECE_TYPE.ROOK && !right_rook.has_moved) {
