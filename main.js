@@ -1,3 +1,4 @@
+// TODO: timer, clock
 const COLOR = {
     BLACK: 0,
     WHITE: 1,
@@ -101,9 +102,6 @@ function Piece(type, r, c) {
         }
     }
     this.last_move = function() { return this.moves[this.moves.length-1]; }
-    this.undo_last_move = function() {
-        let last_move = this.last_move();
-    }
 }
 function Move(piece, to_square, type) {
     this.turn_count = Current_turn.count;
@@ -127,7 +125,7 @@ function Move(piece, to_square, type) {
 
 
 function Board() {
-    this.cell_size = 38;
+    this.cell_size = 80;
     this.grid = document.getElementById("chess-board");
     this.grid.style.width = 8 * this.cell_size;
     this.grid.style.height = 8 * this.cell_size;
@@ -353,6 +351,7 @@ function get_pawn_moves(piece) {
 function get_possible_moves(piece) {
     let result = [];
     switch (piece.piece_type()) {
+    // TODO: only pass color, row, col not the whole piece for these check functions somehow
     case PIECE_TYPE.ROOK  : result = get_rook_moves(piece); break;
     case PIECE_TYPE.PAWN  : result = get_pawn_moves(piece); break;
     case PIECE_TYPE.BISHOP: result = get_bishop_moves(piece); break;
@@ -387,13 +386,50 @@ function is_king_in_check(king) {
     return false;
 }
 
-function is_legal_move(move) {
-    let piece = move.mover;
+function is_legal_move(move) { // make move then check if king is in check then undo
+    // check by assume that each square in between has a king
+    // then we check if any of these king is in checked
+    if (move.type == MOVE.CASTLE) {
+        if (is_king_in_check(move.mover)) return false;
+        let dir = move.target.col == 0 ? -1 : 1;
+        for (let i = move.mover.col + dir; i != move.target.col; i += dir) {
+            move.mover.col = i; // this is to set position of pseudo king to check if path is block
+            if (is_king_in_check(move.mover)) {
+                move.mover.col = move.from.col;
+                return false;
+            }
+            move.mover.col = move
+        }
+        return true;
+    }
+    let result = true;
+    move.mover.row = move.to.row;
+    move.mover.col = move.to.col;
+    if (move.type == MOVE.CAPTURE || move.type == MOVE.ENPASSANT) Chess_board.remove(move.target); // add back later
+    let temp = move.mover.has_moved;
+    move.mover.has_moved = true;
+    move.from.removeChild(move.mover.display);
+    move.to.appendChild(move.mover.display);
+    move.mover.moves.push(move);
+    let my_king = Chess_board.find(move.mover.color() | PIECE_TYPE.KING);
+    if (is_king_in_check(my_king)) result =  false;
+    // undo
+    move.mover.moves.pop();
+    move.to.removeChild(move.mover.display);
+    move.from.appendChild(move.mover.display);
+    move.mover.has_moved = temp;
+    if (move.type == MOVE.CAPTURE || move.type == MOVE.ENPASSANT) {
+        let target = Chess_board.removed_pieces.pop();
+        move.to.appendChild(target.display);
+    }
+    move.mover.row = move.from.row;
+    move.mover.col = move.from.col;
+    return result;
 }
 
 function MovingPiece(piece) {
     this.piece = piece;
-    this.moves = get_possible_moves(piece);
+    this.moves = get_possible_moves(piece).filter(is_legal_move);
     this.piece.square().classList.toggle("selected");
     for (let move of this.moves) {
         Chess_board.get_square(move.to.row, move.to.col).classList.toggle("posible-move");
