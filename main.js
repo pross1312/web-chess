@@ -81,11 +81,6 @@ function change_turn()       {
         turn_text.innerText = "White to move"
     }
 }
-function Vec(x, y) {
-    this.x = x;
-    this.y = y;
-    this.add = (v) => Vec(this.x + v.x, this.y + v.y);
-}
 function Cell(r, c) { this.row = r; this.col = c; }
 // ----------------------------------------------
 function Piece(type, r, c) {
@@ -222,7 +217,6 @@ function Board() {
             square.piece = function() { return square.img() == null ? null : square.img().piece }
             square.row = r;
             square.col = c;
-            square.coord = Vec(c*this.cell_size, r*this.cell_size);
             square.onmousedown = square_mouse_down;
             if ((r+c) % 2 == 0) square.classList.toggle("black");
             else square.classList.toggle("white");
@@ -267,22 +261,22 @@ function Board() {
 }
 
 function DraggingPiece(x, y, piece) {
-    this.start = new Vec(x, y);
+    this.start = {x: x, y: y};
     this.piece = piece;
     this.snap_triggered = false;
-    this.snap_vec = new Vec(0, 0);
+    this.snap_vec = {x: 0, y: 0};
     this.snap_back = function() {
         this.piece.display.style.transform = "none";
     }
     this.drag = function(mouse_x, mouse_y) {
         let piece_img = this.piece.display;
         if (!this.snap_triggered) {
-            this.snap_vec = new Vec(mouse_x - piece_img.offsetLeft - piece_img.width/2,
-                                    mouse_y - piece_img.offsetTop - piece_img.height/2);
+            this.snap_vec = {x: mouse_x - piece_img.offsetLeft - piece_img.width/2,
+                             y: mouse_y - piece_img.offsetTop - piece_img.height/2};
             this.snap_triggered = true;
         }
-        let vec = new Vec(this.snap_vec.x + mouse_x - this.start.x,
-                          this.snap_vec.y + mouse_y - this.start.y);
+        let vec = {x: this.snap_vec.x + mouse_x - this.start.x,
+                   y: this.snap_vec.y + mouse_y - this.start.y};
         piece_img.style.transform = `translate(${vec.x}px, ${vec.y}px)`
     }
 }
@@ -493,12 +487,16 @@ function MovingPiece(piece) {
     this.moves = get_possible_moves(piece).filter(is_legal_move);
     this.piece.square().classList.toggle("selected");
     for (let move of this.moves) {
-        Chess_board.get_square(move.to.row, move.to.col).classList.toggle("posible-move");
+        let square = Chess_board.get_square(move.to.row, move.to.col)
+        if (move.type == MOVE.CAPTURE) square.classList.toggle("on-attacked");
+        else square.classList.toggle("posible-move");
     }
     this.unmark = function() {
         this.piece.square().classList.toggle("selected");
         for (let move of this.moves) {
-            Chess_board.get_square(move.to.row, move.to.col).classList.toggle("posible-move");
+            let square = Chess_board.get_square(move.to.row, move.to.col)
+            if (move.type == MOVE.CAPTURE) square.classList.toggle("on-attacked");
+            else square.classList.toggle("posible-move");
         }
     }
     this.can_move= function(square) {
@@ -514,6 +512,7 @@ function MovingPiece(piece) {
 }
 
 function piece_mouse_up(e) {
+    if (e.button != 0) return; // only handle left mouse button (main button)
     e.stopPropagation();
     if (Dragging_piece != null) {
         if (Moving_piece != null) {
@@ -531,6 +530,7 @@ function piece_mouse_up(e) {
     }
 }
 function square_mouse_down(e) {
+    if (e.button != 0) return; // only handle left mouse button (main button)
     if (Moving_piece != null && Moving_piece.piece.square() != this) {
         Moving_piece.unmark();
         let possible_move = Moving_piece.can_move(this);
@@ -541,6 +541,7 @@ function square_mouse_down(e) {
     }
 }
 function piece_mouse_down(e, piece) {
+    if (e.button != 0) return; // only handle left mouse button (main button)
     e.stopPropagation();
     if (Moving_piece != null) {
         if (Moving_piece.piece != piece) {
