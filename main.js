@@ -104,11 +104,10 @@ function Piece(type, r, c) {
     }
     this.last_move = function() { return this.moves[this.moves.length-1]; }
 }
-function Move(from_square, to_square, type) {
+function Move(piece, to_square, type) {
     this.turn_count = Current_turn.count;
-    this.mover = from_square.piece();
-    if (this.mover == null) alert("Invalid argument to construct Move");
-    this.from = from_square;
+    this.mover = piece;
+    this.from = piece.square();
     this.to = to_square;
     this.type = type;
     this.target = null;
@@ -230,6 +229,7 @@ function DraggingPiece(x, y, piece) {
 
 function get_slide_moves(directions, color, cell) {
     let square = Chess_board.get_square(cell.row, cell.col);
+    if (square == null) console.log(cell.row, cell.col);
     let opponent_color = oppose_color(color);
     let moves = []
     for (let direction of directions) {
@@ -238,7 +238,7 @@ function get_slide_moves(directions, color, cell) {
         while (cur_square != null) {
             if (cur_square.has_piece() && cur_square.piece().color() == color) break;
             let move_type = (cur_square.has_piece() && cur_square.piece().color() == opponent_color) ? MOVE.CAPTURE : MOVE.NORMAL;
-            moves.push(new Move(square, cur_square, move_type));
+            moves.push([cur_square, move_type]);
             if (move_type == MOVE.CAPTURE) break;
             cur_cell = new Cell(direction.row + cur_cell.row, direction.col + cur_cell.col);
             cur_square = Chess_board.get_square(cur_cell.row, cur_cell.col);
@@ -271,7 +271,7 @@ function get_knight_moves(color, cell) {
         if (cur_square == null) continue;
         let move_type = (cur_square.has_piece() && cur_square.piece().color() == opponent_color) ? MOVE.CAPTURE : MOVE.NORMAL;
         if (cur_square.has_piece() && move_type != MOVE.CAPTURE) continue;
-        moves.push(new Move(square, cur_square, move_type));
+        moves.push([cur_square, move_type]);
     }
     return moves;
 }
@@ -279,34 +279,29 @@ function get_knight_moves(color, cell) {
 function get_king_moves(color, cell) {
     let moves = [];
     let square = Chess_board.get_square(cell.row, cell.col);
+    console.log(square);
     let opponent_color = oppose_color(color);
     let directions = [
         new Cell(1, 0), new Cell(-1, 0), new Cell(0, 1), new Cell(0, -1),
         new Cell(1, 1), new Cell(-1, -1), new Cell(1, -1), new Cell(-1, 1),
     ]
     for (let direction of directions) {
-        let cur_cell = new Cell(direction.row + square.row, direction.col + square.col);
-        let cur_square = Chess_board.get_square(cur_cell.row, cur_cell.col);
-        if (cur_square == null) continue;
-        let move_type = (cur_square.has_piece() && cur_square.piece().color() == opponent_color) ? MOVE.CAPTURE : MOVE.NORMAL;
-        if (cur_square.has_piece() && move_type != MOVE.CAPTURE) continue;
-        moves.push(new Move(square, cur_square, move_type));
+        let checking_cell = new Cell(direction.row + square.row, direction.col + square.col);
+        let cheking_square = Chess_board.get_square(checking_cell.row, checking_cell.col);
+        if (cheking_square == null) continue;
+        let move_type = (cheking_square.has_piece() && cheking_square.piece().color() == opponent_color) ? MOVE.CAPTURE : MOVE.NORMAL;
+        if (cheking_square.has_piece() && move_type != MOVE.CAPTURE) continue;
+        moves.push([cheking_square, move_type]);
     }
     // check for castle
-    if (!square.has_moved) {
-        function check_block(row, start_col, end_col) {
-            for (let i = start_col; i <= end_col; i++) if (Chess_board.get(row, i) != null) return true;
-            return false;
-        }
+    if (!square.piece().has_moved) {
         let left_rook = Chess_board.get(square.row, 0);
         let right_rook = Chess_board.get(square.row, 7);
-        if (!check_block(square.row, 1, square.col-1) && left_rook &&
-            left_rook.piece_type() == PIECE_TYPE.ROOK && !left_rook.has_moved) {
-            moves.push(new Move(square, Chess_board.get_square(square.row, 1), MOVE.CASTLE));
+        if (left_rook && left_rook.piece_type() == PIECE_TYPE.ROOK && !left_rook.has_moved) {
+            moves.push([Chess_board.get_square(square.row, 1), MOVE.CASTLE]);
         }
-        if (!check_block(square.row, square.col+1, 6) && right_rook &&
-            right_rook.piece_type() == PIECE_TYPE.ROOK && !right_rook.has_moved) {
-            moves.push(new Move(square, Chess_board.get_square(square.row, 6), MOVE.CASTLE));
+        if (right_rook && right_rook.piece_type() == PIECE_TYPE.ROOK && !right_rook.has_moved) {
+            moves.push([Chess_board.get_square(square.row, 6), MOVE.CASTLE]);
         }
     }
     return moves;
@@ -320,33 +315,34 @@ function get_pawn_moves(color, cell) {
     let main_diag = Chess_board.get_square(square.row + forward, square.col-1);
     let sub_diag = Chess_board.get_square(square.row + forward, square.col+1);
     if (forward_square && !forward_square.has_piece()) {
-        moves.push(new Move(square, forward_square, MOVE.NORMAL));
+        moves.push([forward_square, MOVE.NORMAL]);
         // check for double forward
         let forward_2_square = Chess_board.get_square(square.row + 2*forward, square.col);
-        if (!square.has_moved && forward_2_square && !forward_2_square.has_piece()) {
-            moves.push(new Move(square, forward_2_square, MOVE.PAWN_DOUBLE_ADVANCE));
+        let init_row = color == COLOR.BLACK ? 6 : 1;
+        if (square.row == init_row && forward_2_square && !forward_2_square.has_piece()) {
+            moves.push([forward_2_square, MOVE.PAWN_DOUBLE_ADVANCE]);
         }
     }
     if (main_diag) {
         if (main_diag.has_piece() && main_diag.piece().color() == oppose_color(color)) {
-            moves.push(new Move(square, main_diag, MOVE.CAPTURE));
+            moves.push([main_diag, MOVE.CAPTURE]);
         }
         // check for enpassant
         let left_piece = Chess_board.get(square.row, square.col-1);
         if (left_piece && left_piece.has_moved && left_piece.color() == oppose_color(color) &&
             left_piece.last_move().type == MOVE.PAWN_DOUBLE_ADVANCE && left_piece.last_move().turn_count == Current_turn.count-1) {
-            moves.push(new Move(square, main_diag, MOVE.ENPASSANT));
+            moves.push([main_diag, MOVE.ENPASSANT]);
         }
     }
     if (sub_diag) {
         if (sub_diag.has_piece() && sub_diag.piece().color() == oppose_color(color)) {
-            moves.push(new Move(square, sub_diag, MOVE.CAPTURE));
+            moves.push([sub_diag, MOVE.CAPTURE]);
         }
         // check for enpassant
         let right_piece = Chess_board.get(square.row, square.col+1);
         if (right_piece && right_piece.has_moved && right_piece.color() == oppose_color(color) &&
             right_piece.last_move().type == MOVE.PAWN_DOUBLE_ADVANCE && right_piece.last_move().turn_count == Current_turn.count-1) {
-            moves.push(new Move(square, sub_diag, MOVE.ENPASSANT));
+            moves.push([sub_diag, MOVE.ENPASSANT]);
         }
     }
     return moves;
@@ -367,7 +363,7 @@ function get_possible_moves(piece) {
     case PIECE_TYPE.KING  : result = get_king_moves(piece.color(), piece.cell()); break;
     default:
     }
-    return result;
+    return result.map((x) => new Move(piece, x[0], x[1]));
 }
 
 function is_square_in_attack(color, cell) {
@@ -399,6 +395,7 @@ function is_legal_move(move) { // make move then check if king is in check then 
         if (is_square_in_attack(move.mover.color(), move.mover.cell())) return false;
         let dir = move.target.col == 0 ? -1 : 1;
         for (let i = move.mover.col + dir; i != move.target.col; i += dir) {
+            if (Chess_board.get(move.mover.row, i) != null) return false;
             if (is_square_in_attack(move.mover.color(), new Cell(move.mover.row, i))) return false;
         }
         return true;
@@ -493,6 +490,10 @@ function piece_mouse_down(e, piece) {
             }
         }
         Moving_piece.unmark();
+        if (Moving_piece.piece == piece) {
+            Moving_piece = null;
+            return;
+        }
         Moving_piece = null;
     }
     if (Current_turn.color == piece.color()) Moving_piece = new MovingPiece(piece);
