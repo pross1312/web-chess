@@ -8,7 +8,17 @@
     <script src="./main.js" defer></script>
 </head>
 <body>
-    <div id="turn-text">Black to move</div>
+    <div id="game-end-region">
+        <div id="game-end-popup">
+            End game
+            <button id="rematch-button">Rematch</button>
+        </div>
+    </div>
+    <div id="info-region">
+        <div class="item clock" id="white-clock">00:00</div>
+        <div class="item" id="turn-text">Black to move</div>
+        <div class="item clock" id="black-clock">00:00</div>
+    </div>
     <div id="chess-board">
     </div>
 </body>

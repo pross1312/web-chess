@@ -1,7 +1,6 @@
-// TODO: timer, clock
 const COLOR = {
-    BLACK: 0,
-    WHITE: 1,
+    BLACK: 1,
+    WHITE: 0,
 };
 const PIECE_TYPE = {
     PAWN: 0b10,
@@ -22,29 +21,73 @@ const MOVE = {
 // ----------------------------------------------
 // GLOBAL variable
 let Chess_board      = new Board();
-let Current_turn     = {count: 0, color: COLOR.BLACK};
+let Current_turn     = {count: 0, color: COLOR.WHITE};
 let Dragging_piece   = null;
 let Moving_piece     = null;
+let Clocks           = [document.getElementById("white-clock"), document.getElementById("black-clock")];
+let Time_left        = [300, 300];
+let Current_clock    = null;
+let rematch_button   = document.getElementById("rematch-button");
+let game_end_popup   = document.getElementById("game-end-popup");
+let game_end_region  = document.getElementById("game-end-region");
+let turn_text        = document.getElementById("turn-text");
 // ----------------------------------------------
 // support utils
+function oppose_color(color) { return 1 - color; }
+display_time(); // show time on clock
+rematch_button.onclick = function() {
+    Chess_board = new Board();
+    Time_left = [300, 300];
+    Current_turn = {count: 0, color: COLOR.WHITE};
+    Clocks[COLOR.WHITE].classList.remove("inactive");
+    Clocks[COLOR.BLACK].classList.remove("inactive");
+    game_end_region.style.zIndex = -1;
+    game_end_popup.classList.toggle("show");
+    display_time();
+}
+function game_end(winner_color) {
+    if (Current_clock) window.clearInterval(Current_clock);
+    Clocks[COLOR.WHITE].classList.add("inactive");
+    Clocks[COLOR.BLACK].classList.add("inactive");
+    if (winner_color == COLOR.BLACK) game_end_popup.childNodes[0].textContent = "Black win";
+    else game_end_popup.childNodes[0].textContent = "White win";
+    game_end_region.style.zIndex = 1;
+    game_end_popup.classList.toggle("show");
+}
+function display_time() {
+    function pad(num, size){ return ('000000000' + num).substr(-size); }
+    Clocks[0].innerText = pad(parseInt(Time_left[0]/60), 2) + ":" + pad(parseInt(Time_left[0]%60), 2);
+    Clocks[1].innerText = pad(parseInt(Time_left[1]/60), 2) + ":" + pad(parseInt(Time_left[1]%60), 2);
+}
+function start_clock(color) {
+    Clocks[color].classList.remove("inactive");
+    Clocks[oppose_color(color)].classList.add("inactive");
+    return window.setInterval(function() {
+        Time_left[color]--;
+        display_time();
+        if (Time_left[color] == 0) game_end(oppose_color(color));
+    }, 1000);
+}
 function change_turn()       {
+    if (Current_clock) window.clearInterval(Current_clock);
     Current_turn = {
         count: Current_turn.count + 1,
         color: 1 - Current_turn.color,
     };
+    Current_clock = start_clock(Current_turn.color);
     if (Current_turn.color == COLOR.BLACK) {
-        document.getElementById("turn-text").innerText = "Black to move"
+        turn_text.innerText = "Black to move"
     } else {
-        document.getElementById("turn-text").innerText = "White to move"
+        turn_text.innerText = "White to move"
     }
 }
-function oppose_color(color) { return 1 - color; }
 function Vec(x, y) {
     this.x = x;
     this.y = y;
     this.add = (v) => Vec(this.x + v.x, this.y + v.y);
 }
 function Cell(r, c) { this.row = r; this.col = c; }
+// ----------------------------------------------
 function Piece(type, r, c) {
     function get_color(piece)    { if (piece == null || piece == PIECE_TYPE.NONE) return null; return piece & 1; }
     function get_type(piece)     { return piece & (~1); }
@@ -92,8 +135,13 @@ function Piece(type, r, c) {
 
         // check for checking
         let oppose_king = Chess_board.find(oppose_color(this.color()) | PIECE_TYPE.KING);
-        if (is_square_in_attack(oppose_king.color(), oppose_king.cell())) oppose_king.square().classList.add("in-check");
-        else oppose_king.square().classList.remove("in-check");
+        if (is_square_in_attack(oppose_king.color(), oppose_king.cell())) {
+            oppose_king.square().classList.add("in-check");
+            let escapses = get_king_moves(oppose_king.color(), oppose_king.cell())
+                            .map(([square_to, type] => new Move(oppose_king, square_to, type)))
+                            .filter(is_legal_move);
+            if (escapses.lenght == 0 && !is_square_in_attack(move.mover.color(), move.to)) game_end(move.mover.color());
+        }
         if (this.piece_type() == PIECE_TYPE.KING) {
             move.from.classList.remove("in-check");
         } else {
@@ -114,7 +162,7 @@ function Move(piece, to_square, type) {
     if (type == MOVE.CAPTURE) {
         this.target = this.to.piece();
     } else if (type == MOVE.ENPASSANT) {
-        let forward = this.mover.color() == COLOR.BLACK ? -1 : 1;
+        let forward = this.mover.color() == COLOR.WHITE ? -1 : 1;
         this.target = Chess_board.get(this.to.row - forward, this.to.col);
         console.assert(this.target != null && this.target.color() == oppose_color(this.mover.color()));
     } else if (type == MOVE.CASTLE) {
@@ -126,12 +174,9 @@ function Move(piece, to_square, type) {
 
 
 function Board() {
-    this.cell_size = 90;
     this.grid = document.getElementById("chess-board");
-    this.grid.style.width = 8 * this.cell_size;
-    this.grid.style.height = 8 * this.cell_size;
-    this.grid.style.gridTemplateColumns = `repeat(8, ${this.cell_size}px)`;
-    this.grid.style.gridTemplateRows = `repeat(8, ${this.cell_size}px)`;
+    this.grid.innerText = "";
+    this.cell_size = parseInt(this.grid.style.width/8);
     this.get_square = function(r, c) {
         if (r >= 8 || r < 0 || c >= 8 || c < 0) return null;
         return this.grid.children[r * 8 + c];
@@ -171,8 +216,8 @@ function Board() {
     }
     function parse_char(c) {
         let piece = PIECE_TYPE.NONE;
-        if (c.toUpperCase() == c) piece |= COLOR.BLACK;
-        else piece |= COLOR.WHITE;
+        if (c.toUpperCase() == c) piece |= COLOR.WHITE;
+        else piece |= COLOR.BLACK;
         switch (c.toLowerCase()) {
             case 'n': piece |= PIECE_TYPE.KNIGHT; break;
             case 'k': piece |= PIECE_TYPE.KING; break;
@@ -229,7 +274,6 @@ function DraggingPiece(x, y, piece) {
 
 function get_slide_moves(directions, color, cell) {
     let square = Chess_board.get_square(cell.row, cell.col);
-    if (square == null) console.log(cell.row, cell.col);
     let opponent_color = oppose_color(color);
     let moves = []
     for (let direction of directions) {
@@ -279,7 +323,6 @@ function get_knight_moves(color, cell) {
 function get_king_moves(color, cell) {
     let moves = [];
     let square = Chess_board.get_square(cell.row, cell.col);
-    console.log(square);
     let opponent_color = oppose_color(color);
     let directions = [
         new Cell(1, 0), new Cell(-1, 0), new Cell(0, 1), new Cell(0, -1),
@@ -310,7 +353,7 @@ function get_king_moves(color, cell) {
 function get_pawn_moves(color, cell) {
     let moves = [];
     let square = Chess_board.get_square(cell.row, cell.col);
-    let forward = color == COLOR.BLACK ? -1 : 1;
+    let forward = color == COLOR.WHITE ? -1 : 1;
     let forward_square = Chess_board.get_square(square.row + forward, square.col);
     let main_diag = Chess_board.get_square(square.row + forward, square.col-1);
     let sub_diag = Chess_board.get_square(square.row + forward, square.col+1);
@@ -318,7 +361,7 @@ function get_pawn_moves(color, cell) {
         moves.push([forward_square, MOVE.NORMAL]);
         // check for double forward
         let forward_2_square = Chess_board.get_square(square.row + 2*forward, square.col);
-        let init_row = color == COLOR.BLACK ? 6 : 1;
+        let init_row = color == COLOR.WHITE ? 6 : 1;
         if (square.row == init_row && forward_2_square && !forward_2_square.has_piece()) {
             moves.push([forward_2_square, MOVE.PAWN_DOUBLE_ADVANCE]);
         }
@@ -491,10 +534,6 @@ function piece_mouse_down(e, piece) {
             }
         }
         Moving_piece.unmark();
-        if (Moving_piece.piece == piece) {
-            Moving_piece = null;
-            return;
-        }
         Moving_piece = null;
     }
     if (Current_turn.color == piece.color()) Moving_piece = new MovingPiece(piece);
