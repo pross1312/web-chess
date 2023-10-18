@@ -134,24 +134,34 @@ function Piece(type, r, c) {
         this.moves.push(move);
 
         // check for checking
-        let oppose_king = Chess_board.find(oppose_color(this.color()) | PIECE_TYPE.KING);
+        let oppose_king = Chess_board.find(oppose_color(this.color()) | PIECE_TYPE.KING)[0];
         if (is_square_in_attack(oppose_king.color(), oppose_king.cell())) {
             oppose_king.square().classList.add("in-check");
-            let escapses = get_king_moves(oppose_king.color(), oppose_king.cell())
-                            .map(([square_to, type] => new Move(oppose_king, square_to, type)))
-                            .filter(is_legal_move);
-            if (escapses.lenght == 0 && !is_square_in_attack(move.mover.color(), move.to)) game_end(move.mover.color());
+            let escapses = get_possible_moves(oppose_king).filter(is_legal_move);
+            console.log(escapses);
+            let has_move_left = false;
+            for (let type in PIECE_TYPE) {
+                let check_piece = Chess_board.find(oppose_king.color() | PIECE_TYPE[type]);
+                for (let p of check_piece) if (get_possible_moves(p).filter(is_legal_move).length != 0) {
+                    has_move_left = true;
+                    break;
+                }
+                if (has_move_left) break;
+            }
+            console.log(escapses.length);
+            if (escapses.length == 0 && !has_move_left) game_end(move.mover.color());
         }
         if (this.piece_type() == PIECE_TYPE.KING) {
             move.from.classList.remove("in-check");
         } else {
-            let my_king = Chess_board.find(this.color() | PIECE_TYPE.KING);
+            let my_king = Chess_board.find(this.color() | PIECE_TYPE.KING)[0];
             if (is_square_in_attack(my_king.color(), my_king.cell())) my_king.square().classList.add("in-check");
             else my_king.square().classList.remove("in-check");
         }
     }
     this.last_move = function() { return this.moves[this.moves.length-1]; }
 }
+
 function Move(piece, to_square, type) {
     this.turn_count = Current_turn.count;
     this.mover = piece;
@@ -176,7 +186,7 @@ function Move(piece, to_square, type) {
 function Board() {
     this.grid = document.getElementById("chess-board");
     this.grid.innerText = "";
-    this.cell_size = parseInt(this.grid.style.width/8);
+    this.cell_size = parseInt(this.grid.offsetWidth/8);
     this.get_square = function(r, c) {
         if (r >= 8 || r < 0 || c >= 8 || c < 0) return null;
         return this.grid.children[r * 8 + c];
@@ -194,9 +204,13 @@ function Board() {
     }
     this.get = function(r, c) { return this.get_square(r, c).piece(); }
     this.removed_pieces = [];
+    this.add = function(piece) { this.pieces[piece.type].push(piece); }
     this.remove = function(piece) {
         this.removed_pieces.push(piece);
         piece.square().removeChild(piece.display);
+        let index = this.find(piece.type).indexOf(piece);
+        if (index == -1) alert("CAN'T REMOVE");
+        this.find(piece.type).splice(index, 1);
     }
     for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
@@ -242,7 +256,8 @@ function Board() {
                 }
                 let piece_type = parse_char(p);
                 let piece = new Piece(piece_type, parseInt(count/8), count%8);
-                this.pieces[piece.type.toString()] = piece;
+                if (this.pieces[piece.type.toString()] == null) this.pieces[piece.type.toString()] = [];
+                this.pieces[piece.type.toString()].push(piece);
                 this.grid.children[count].appendChild(piece.display);
                 count += 1;
             }
@@ -413,20 +428,23 @@ function is_square_in_attack(color, cell) {
     let straight_moves = get_rook_moves(color, cell);
     let diag_moves = get_bishop_moves(color, cell);
     let knight_moves = get_knight_moves(color, cell);
-    for (let [cell, type] of straight_moves) {
+    for (let [square, type] of straight_moves) {
         if (type != MOVE.CAPTURE) continue;
-        let attacker = Chess_board.get(cell.row, cell.col).piece_type();
+        let attacker = Chess_board.get(square.row, square.col).piece_type();
         if (attacker == PIECE_TYPE.ROOK || attacker == PIECE_TYPE.QUEEN) return true;
     }
-    for (let [cell, type] of diag_moves) {
+    for (let [square, type] of diag_moves) {
         if (type != MOVE.CAPTURE) continue;
-        let attacker = Chess_board.get(cell.row, cell.col).piece_type();
+        let attacker = Chess_board.get(square.row, square.col).piece_type();
         if (attacker == PIECE_TYPE.BISHOP || attacker == PIECE_TYPE.QUEEN) return true;
-        else if (attacker == PIECE_TYPE.PAWN && Math.abs(move.target.row - king.row) == 1) return true;
+        else if (attacker == PIECE_TYPE.PAWN) {
+            let forward = color == COLOR.WHITE ? -1 : 1;
+            if (cell.row + forward == square.row) return true;
+        }
     }
-    for (let [cell, type] of knight_moves) {
+    for (let [square, type] of knight_moves) {
         if (type != MOVE.CAPTURE) continue;
-        let attacker = Chess_board.get(cell.row, cell.col).piece_type();
+        let attacker = Chess_board.get(square.row, square.col).piece_type();
         if (attacker == PIECE_TYPE.KNIGHT) return true;
     }
     return false;
@@ -453,7 +471,7 @@ function is_legal_move(move) { // make move then check if king is in check then 
     move.from.removeChild(move.mover.display);
     move.to.appendChild(move.mover.display);
     move.mover.moves.push(move);
-    let my_king = Chess_board.find(move.mover.color() | PIECE_TYPE.KING);
+    let my_king = Chess_board.find(move.mover.color() | PIECE_TYPE.KING)[0];
     if (is_square_in_attack(my_king.color(), my_king.cell())) result =  false;
     // undo
     move.mover.moves.pop();
@@ -463,6 +481,7 @@ function is_legal_move(move) { // make move then check if king is in check then 
     if (move.type == MOVE.CAPTURE || move.type == MOVE.ENPASSANT) {
         let target = Chess_board.removed_pieces.pop();
         target.square().appendChild(target.display);
+        Chess_board.add(target);
     }
     move.mover.row = move.from.row;
     move.mover.col = move.from.col;
