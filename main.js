@@ -370,20 +370,21 @@ function is_square_in_attack(color, cell) {
     let straight_moves = get_rook_moves(color, cell);
     let diag_moves = get_bishop_moves(color, cell);
     let knight_moves = get_knight_moves(color, cell);
-    for (let move of straight_moves) {
-        if (move.type != MOVE.CAPTURE) continue;
-        let attacker = move.target.piece_type();
+    for (let [cell, type] of straight_moves) {
+        if (type != MOVE.CAPTURE) continue;
+        let attacker = Chess_board.get(cell.row, cell.col).piece_type();
         if (attacker == PIECE_TYPE.ROOK || attacker == PIECE_TYPE.QUEEN) return true;
     }
-    for (let move of diag_moves) {
-        if (move.type != MOVE.CAPTURE) continue;
-        let attacker = move.target.piece_type();
+    for (let [cell, type] of diag_moves) {
+        if (type != MOVE.CAPTURE) continue;
+        let attacker = Chess_board.get(cell.row, cell.col).piece_type();
         if (attacker == PIECE_TYPE.BISHOP || attacker == PIECE_TYPE.QUEEN) return true;
         else if (attacker == PIECE_TYPE.PAWN && Math.abs(move.target.row - king.row) == 1) return true;
     }
-    for (let move of knight_moves) {
-        if (move.type != MOVE.CAPTURE) continue;
-        if (move.target.piece_type() == PIECE_TYPE.KNIGHT) return true;
+    for (let [cell, type] of knight_moves) {
+        if (type != MOVE.CAPTURE) continue;
+        let attacker = Chess_board.get(cell.row, cell.col).piece_type();
+        if (attacker == PIECE_TYPE.KNIGHT) return true;
     }
     return false;
 }
