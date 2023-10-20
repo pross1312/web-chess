@@ -111,16 +111,20 @@ html, body {
     max-height: 100%;
     border-collapse: collapse;
     cursor: pointer;
+    border: none;
+    border-collapse: collapse;
 }
 #chess-board .posible-move {
-    border: 1px solid black;
-    background-color: #888 !important;
+    border: 1px solid blue;
+    background-color: #85b1f6 !important;
 }
 #chess-board .selected {
     background-color: #BBCC44 !important;
+    border: 1px solid black !important;
 }
 #chess-board .on-attacked {
     box-shadow: inset 0 0 0 1000px rgba(255, 100, 100, 0.5);
+    border: 1px solid red !important;
 }
 #chess-board .white {
     background-color: #779954;
@@ -128,8 +132,14 @@ html, body {
 #chess-board .black {
     background-color: #E9EDCC;
 }
+#chess-board .mouse-in-black {
+    border: 5px solid #6652ff !important;
+}
+#chess-board .mouse-in-white {
+    border: 5px solid #6652ff !important;
+}
 #chess-board .in-check {
-    background-color: violet !important;
+    background-color: #ff64647f !important;
 }
 img {
     width: 100%;
