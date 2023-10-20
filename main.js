@@ -27,6 +27,7 @@ let Moving_piece     = null;
 let Clocks           = [document.getElementById("white-clock"), document.getElementById("black-clock")];
 let Time_left        = [300, 300];
 let Current_clock    = null;
+let Drag_square      = null;
 let rematch_button   = document.getElementById("rematch-button");
 let game_end_popup   = document.getElementById("game-end-popup");
 let game_end_region  = document.getElementById("game-end-region");
@@ -108,11 +109,12 @@ function Piece(type, r, c) {
     }
     this.display = document.createElement("img");
     this.display.src = "./images/" + this.name + ".png";
-    this.display.draggable = false;
+    this.display.draggable = true;
     this.square = function() { return Chess_board.get_square(this.row, this.col); }
     this.display.piece = this;
-    this.display.onmousedown = function(e){ piece_mouse_down(e, this.piece); };
-    this.display.onmouseup = function(e){ piece_mouse_up(e, this.piece); };
+    this.display.onmousedown = piece_mouse_down;
+    this.display.ondragstart = piece_drag_start;
+    this.display.onmouseup = piece_mouse_up;
     this.move = function(move) {
         this.row = move.to.row;
         this.col = move.to.col;
@@ -136,7 +138,9 @@ function Piece(type, r, c) {
             console.log(escapses);
             let has_move_left = false;
             for (let type in PIECE_TYPE) {
+                if (type == "NONE") break;
                 let check_piece = Chess_board.find(oppose_king.color() | PIECE_TYPE[type]);
+                if (check_piece == null) console.log(oppose_king.color(), type);
                 for (let p of check_piece) if (get_possible_moves(p).filter(is_legal_move).length != 0) {
                     has_move_left = true;
                     break;
@@ -218,8 +222,15 @@ function Board() {
             square.row = r;
             square.col = c;
             square.onmousedown = square_mouse_down;
-            if ((r+c) % 2 == 0) square.classList.toggle("black");
-            else square.classList.toggle("white");
+            square.onmouseenter = function(e) { if (Moving_piece) square_mark(this); };
+            square.onmouseleave = function(e) { if (Moving_piece) square_unmark(this); };
+            if ((r+c) % 2 == 0) {
+                square.classList.toggle("black");
+                square.color = "black";
+            } else {
+                square.classList.toggle("white");
+                square.color = "white";
+            }
         }
     }
     function parse_char(c) {
@@ -260,23 +271,31 @@ function Board() {
     this.display_FEN(start_FEN);
 }
 
+function square_mark(square) { square.classList.add("mouse-in-" + square.color); }
+function square_unmark(square) { square.classList.remove("mouse-in-" + square.color); }
+
 function DraggingPiece(x, y, piece) {
     this.start = {x: x, y: y};
     this.piece = piece;
-    this.snap_triggered = false;
-    this.snap_vec = {x: 0, y: 0};
     this.snap_back = function() {
         this.piece.display.style.transform = "none";
     }
+    let piece_img = this.piece.display;
+    this.snap_vec = {x: this.start.x - piece_img.offsetLeft - piece_img.width/2,
+                     y: this.start.y - piece_img.offsetTop - piece_img.height/2};
     this.drag = function(mouse_x, mouse_y) {
         let piece_img = this.piece.display;
-        if (!this.snap_triggered) {
-            this.snap_vec = {x: mouse_x - piece_img.offsetLeft - piece_img.width/2,
-                             y: mouse_y - piece_img.offsetTop - piece_img.height/2};
-            this.snap_triggered = true;
-        }
         let vec = {x: this.snap_vec.x + mouse_x - this.start.x,
                    y: this.snap_vec.y + mouse_y - this.start.y};
+        let cur_square = Chess_board.square_at_coord(mouse_x, mouse_y);
+        if (cur_square != piece.square()) square_unmark(piece.square());
+        if (Drag_square != cur_square) {
+            if (Drag_square != null) square_unmark(Drag_square);
+            if (cur_square != null) {
+                Drag_square = cur_square;
+                square_mark(Drag_square);
+            }
+        }
         piece_img.style.transform = `translate(${vec.x}px, ${vec.y}px)`
     }
 }
@@ -511,26 +530,9 @@ function MovingPiece(piece) {
     }
 }
 
-function piece_mouse_up(e) {
-    if (e.button != 0) return; // only handle left mouse button (main button)
-    e.stopPropagation();
-    if (Dragging_piece != null) {
-        if (Moving_piece != null) {
-            let square = Chess_board.square_at_coord(e.clientX, e.clientY);
-            if (square != null) {
-                let possible_move = Moving_piece.can_move(square);
-                if (possible_move != null) {
-                    Moving_piece.unmark();
-                    Moving_piece.make_move(possible_move);
-                    Moving_piece = null;
-                } else Dragging_piece.snap_back();
-            } else Dragging_piece.snap_back();
-        }
-        Dragging_piece = null;
-    }
-}
 function square_mouse_down(e) {
     if (e.button != 0) return; // only handle left mouse button (main button)
+    square_unmark(this);
     if (Moving_piece != null && Moving_piece.piece.square() != this) {
         Moving_piece.unmark();
         let possible_move = Moving_piece.can_move(this);
@@ -540,26 +542,46 @@ function square_mouse_down(e) {
         Moving_piece = null;
     }
 }
-function piece_mouse_down(e, piece) {
+function piece_mouse_up(e) { // for drag piece up
     if (e.button != 0) return; // only handle left mouse button (main button)
-    e.stopPropagation();
-    if (Moving_piece != null) {
-        if (Moving_piece.piece != piece) {
-            let possible_move = Moving_piece.can_move(piece.square());
-            if (possible_move != null) {
-                Moving_piece.unmark();
-                Moving_piece.make_move(possible_move);
-                Moving_piece = null;
-                return;
-            }
+    if (Dragging_piece != null) {
+        if (Moving_piece != null) {
+            let square = Chess_board.square_at_coord(e.clientX, e.clientY);
+            if (square != null) {
+                let possible_move = Moving_piece.can_move(square);
+                if (possible_move != null) {
+                    Moving_piece.unmark();
+                    Moving_piece.make_move(possible_move);
+                    square_unmark(possible_move.to);
+                    Moving_piece = null;
+                } else Dragging_piece.snap_back();
+            } else Dragging_piece.snap_back();
         }
+    }
+    Dragging_piece = null;
+}
+function piece_drag_start(e) {
+    if (Dragging_piece == null && Current_turn.color == this.piece.color()) {
+        Dragging_piece = new DraggingPiece(e.clientX, e.clientY, this.piece);
+    }
+    e.preventDefault();
+}
+function piece_mouse_down(e) {
+    if (e.button != 0) return; // only handle left mouse button (main button)
+    if (Moving_piece != null) {
         Moving_piece.unmark();
+        let done = false;
+        if (Moving_piece.piece != this.piece) {
+            let possible_move = Moving_piece.can_move(this.piece.square());
+            if (possible_move != null) {
+                Moving_piece.make_move(possible_move);
+                done = true;
+            }
+        } else done = true;
         Moving_piece = null;
+        if (done) return;
     }
-    if (Current_turn.color == piece.color()) Moving_piece = new MovingPiece(piece);
-    if (Dragging_piece == null && Current_turn.color == piece.color()) {
-        Dragging_piece = new DraggingPiece(e.clientX, e.clientY, piece);
-    }
+    if (Current_turn.color == this.piece.color()) Moving_piece = new MovingPiece(this.piece);
 }
 window.onmousemove = function(e) {
     if (Dragging_piece != null) {
