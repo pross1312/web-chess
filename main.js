@@ -211,11 +211,20 @@ function Board() {
         if (index == -1) alert("CAN'T REMOVE");
         this.find(piece.type).splice(index, 1);
     }
+    let row_color = null;
+    const init_row_pieces = ["ROOK", "KNIGHT", "BISHOP", "QUEEN", "KING", "BISHOP", "KNIGHT", "ROOK"];
     for (let r = 0; r < 8; r++) {
+        if (r == 0 || r == 1) row_color = COLOR.BLACK;
+        else if (r == 7 || r == 6) row_color = COLOR.WHITE;
+        else row_color = null;
         for (let c = 0; c < 8; c++) {
+            let piece_type = PIECE_TYPE.NONE;
+            if (r == 6 || r == 1) piece_type = PIECE_TYPE.PAWN | row_color;
+            else if (r == 0 || r == 7) piece_type = PIECE_TYPE[init_row_pieces[c]] | row_color;
+            console.log(piece_type);
             let square = document.createElement("div");
-            square.classList.toggle("square");
             this.grid.appendChild(square);
+            square.classList.toggle("square");
             square.img = function() { return this.getElementsByTagName("img")[0] }
             square.has_piece = function() { return this.img() != null }
             square.piece = function() { return square.img() == null ? null : square.img().piece }
@@ -224,6 +233,12 @@ function Board() {
             square.onmousedown = square_mouse_down;
             square.onmouseenter = function(e) { if (Moving_piece) square_mark(this); };
             square.onmouseleave = function(e) { if (Moving_piece) square_unmark(this); };
+            if (piece_type != PIECE_TYPE.NONE) {
+                let piece = new Piece(piece_type, r, c);
+                if (this.pieces[piece.type.toString()] == null) this.pieces[piece.type.toString()] = [];
+                this.pieces[piece.type.toString()].push(piece);
+                square.appendChild(piece.display);
+            }
             if ((r+c) % 2 == 0) {
                 square.classList.toggle("black");
                 square.color = "black";
@@ -248,27 +263,6 @@ function Board() {
         }
         return piece;
     }
-    let start_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
-    this.display_FEN = function(fen) {
-        let lines = fen.split("/");
-        console.assert(lines.length == 8);
-        let count = 0;
-        for (let line of lines) {
-            for (let p of line) {
-                if (!isNaN(p.trim())) {
-                    count += Number(p);
-                    continue;
-                }
-                let piece_type = parse_char(p);
-                let piece = new Piece(piece_type, parseInt(count/8), count%8);
-                if (this.pieces[piece.type.toString()] == null) this.pieces[piece.type.toString()] = [];
-                this.pieces[piece.type.toString()].push(piece);
-                this.grid.children[count].appendChild(piece.display);
-                count += 1;
-            }
-        }
-    }
-    this.display_FEN(start_FEN);
 }
 
 function square_mark(square) { square.classList.add("mouse-in-" + square.color); }
